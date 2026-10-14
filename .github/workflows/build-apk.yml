@@ -1,0 +1,63 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - river-club-source.zip
+      - .github/workflows/build-apk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: game/poker-android
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract source
+        working-directory: .
+        run: unzip -q river-club-source.zip -d game
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Test rules and mobile interface
+        run: |
+          npm test
+          npm install --no-save --ignore-scripts playwright@1.56.1
+          npx playwright install --with-deps chromium
+          node tests/browser.cjs
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build and verify APK
+        run: |
+          gradle --no-daemon :app:assembleDebug
+          mkdir -p outputs
+          cp app/build/outputs/apk/debug/app-debug.apk outputs/river-club.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose outputs/river-club.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: river-club-android
+          path: game/poker-android/outputs/river-club.apk
+          retention-days: 14
